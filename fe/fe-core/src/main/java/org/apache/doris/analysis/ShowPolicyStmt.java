@@ -22,6 +22,7 @@ import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
 import org.apache.doris.mysql.privilege.PrivPredicate;
+import org.apache.doris.policy.InvertIndexPolicy;
 import org.apache.doris.policy.PolicyTypeEnum;
 import org.apache.doris.policy.RowPolicy;
 import org.apache.doris.policy.StoragePolicy;
@@ -71,6 +72,7 @@ public class ShowPolicyStmt extends ShowStmt {
         sb.append("SHOW ").append(type).append(" POLICY");
         switch (type) {
             case STORAGE:
+            case FULLTEXT:
                 break;
             case ROW:
             default:
@@ -89,6 +91,8 @@ public class ShowPolicyStmt extends ShowStmt {
         switch (type) {
             case STORAGE:
                 return StoragePolicy.STORAGE_META_DATA;
+            case FULLTEXT:
+                return InvertIndexPolicy.FULLTEXT_META_DATA;
             case ROW:
             default:
                 return RowPolicy.ROW_META_DATA;

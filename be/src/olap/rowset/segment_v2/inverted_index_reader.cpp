@@ -16,6 +16,7 @@
 // under the License.
 
 #include "olap/rowset/segment_v2/inverted_index_reader.h"
+#include "olap/rowset/segment_v2/inverted_index/custom_dict_mgr.h"
 
 #include <CLucene/analysis/AnalysisHeader.h>
 #include <CLucene/analysis/Analyzers.h>
@@ -131,6 +132,24 @@ std::unique_ptr<lucene::analysis::Analyzer> InvertedIndexReader::create_analyzer
         // default
         analyzer = std::make_unique<lucene::analysis::SimpleAnalyzer<char>>();
     }
+
+    const std::string& stopwords = inverted_index_ctx->stopwords;
+    if (stopwords != INVERTED_INDEX_PARSER_NONE) {
+        auto words_ptr = ExecEnv::GetInstance()->get_custom_dict_mgr()->getStopWords(stopwords);
+        if (words_ptr) {
+            analyzer->setStopWords(words_ptr);
+        }
+    }
+
+    const std::string& lowercase = inverted_index_ctx->lowercase;
+    if (lowercase != INVERTED_INDEX_PARSER_NONE) {
+        if (lowercase == INVERTED_INDEX_PARSER_YES) {
+            analyzer->setToLower(true);
+        } else {
+            analyzer->setToLower(false);
+        }
+    }
+
     return analyzer;
 }
 
@@ -261,6 +280,8 @@ Status FullTextIndexReader::query(OlapReaderStatistics* stats, RuntimeState* run
             get_parser_mode_string_from_properties(_index_meta.properties());
     inverted_index_ctx->char_filter_map =
             get_parser_char_filter_map_from_properties(_index_meta.properties());
+    inverted_index_ctx->stopwords = get_parser_filter_stopwords_from_properties(_index_meta.properties());
+    inverted_index_ctx->lowercase = get_parser_filter_lowercase_from_properties(_index_meta.properties());
     try {
         auto analyzer = create_analyzer(inverted_index_ctx.get());
         auto reader = create_reader(inverted_index_ctx.get(), search_str);

@@ -96,6 +96,7 @@
 #include "vec/runtime/vdata_stream_mgr.h"
 #include "vec/sink/delta_writer_v2_pool.h"
 #include "vec/sink/load_stream_stub_pool.h"
+#include "olap/rowset/segment_v2/inverted_index/custom_dict_mgr.h"
 
 #if !defined(__SANITIZE_ADDRESS__) && !defined(ADDRESS_SANITIZER) && !defined(LEAK_SANITIZER) && \
         !defined(THREAD_SANITIZER) && !defined(USE_JEMALLOC)
@@ -218,6 +219,8 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths,
     _load_stream_stub_pool = std::make_unique<stream_load::LoadStreamStubPool>();
     _delta_writer_v2_pool = std::make_unique<vectorized::DeltaWriterV2Pool>();
     _wal_manager = WalManager::create_shared(this, config::group_commit_replay_wal_dir);
+    _custom_dict_mgr = new CustomDictMgr(config::inverted_index_stopwords_path,
+                                         config::inverted_index_userdict_path);
 
     _backend_client_cache->init_metrics("backend");
     _frontend_client_cache->init_metrics("frontend");
@@ -268,6 +271,8 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths,
         LOG(ERROR) << "Failed to starge bg threads of storage engine, res=" << st;
         return st;
     }
+
+    _custom_dict_mgr->init();
 
     _s_ready = true;
 
@@ -548,6 +553,7 @@ void ExecEnv::destroy() {
     _new_load_stream_mgr.reset();
     _stream_load_executor.reset();
     SAFE_STOP(_storage_engine);
+    SAFE_STOP(_custom_dict_mgr);
     SAFE_SHUTDOWN(_buffered_reader_prefetch_thread_pool);
     SAFE_SHUTDOWN(_s3_file_upload_thread_pool);
     SAFE_SHUTDOWN(_join_node_thread_pool);
@@ -638,6 +644,7 @@ void ExecEnv::destroy() {
     // access master_info.backend id to access some info. If there is a running query and master
     // info is deconstructed then BE process will core at coordinator back method in fragment mgr.
     SAFE_DELETE(_master_info);
+    SAFE_DELETE(_custom_dict_mgr);
 
     SAFE_SHUTDOWN(_global_block_scheduler.get());
     SAFE_SHUTDOWN(_without_group_block_scheduler.get());

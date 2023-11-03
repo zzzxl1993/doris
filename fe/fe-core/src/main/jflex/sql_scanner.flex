@@ -439,6 +439,7 @@ import org.apache.doris.qe.SqlModeHelper;
         keywordMap.put("status", new Integer(SqlParserSymbols.KW_STATUS));
         keywordMap.put("stop", new Integer(SqlParserSymbols.KW_STOP));
         keywordMap.put("storage", new Integer(SqlParserSymbols.KW_STORAGE));
+        keywordMap.put("fulltext", new Integer(SqlParserSymbols.KW_FULLTEXT));
         keywordMap.put("stream", new Integer(SqlParserSymbols.KW_STREAM));
         keywordMap.put("streaming", new Integer(SqlParserSymbols.KW_STREAMING));
         keywordMap.put("string", new Integer(SqlParserSymbols.KW_STRING));

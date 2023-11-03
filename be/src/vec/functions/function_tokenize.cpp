@@ -138,8 +138,9 @@ Status FunctionTokenize::execute_impl(FunctionContext* /*context*/, Block& block
             inverted_index_ctx.parser_type = get_inverted_index_parser_type_from_string(
                     get_parser_string_from_properties(properties));
             inverted_index_ctx.parser_mode = get_parser_mode_string_from_properties(properties);
-            inverted_index_ctx.char_filter_map =
-                    get_parser_char_filter_map_from_properties(properties);
+            inverted_index_ctx.char_filter_map = get_parser_char_filter_map_from_properties(properties);
+            inverted_index_ctx.stopwords = get_parser_filter_stopwords_from_properties(properties);
+            inverted_index_ctx.lowercase = get_parser_filter_lowercase_from_properties(properties);
             auto analyzer =
                     doris::segment_v2::InvertedIndexReader::create_analyzer(&inverted_index_ctx);
             inverted_index_ctx.analyzer = analyzer.get();

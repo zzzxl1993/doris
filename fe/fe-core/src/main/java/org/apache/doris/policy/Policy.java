@@ -112,6 +112,10 @@ public abstract class Policy implements Writable, GsonPostProcessable {
                 StoragePolicy storagePolicy = new StoragePolicy(policyId, stmt.getPolicyName());
                 storagePolicy.init(stmt.getProperties(), stmt.isIfNotExists());
                 return storagePolicy;
+            case FULLTEXT:
+                InvertIndexPolicy invertIndexPolicy = new InvertIndexPolicy(policyId, stmt.getPolicyName());
+                invertIndexPolicy.init(stmt.getProperties());
+                return invertIndexPolicy;
             case ROW:
                 // stmt must be analyzed.
                 DatabaseIf db = Env.getCurrentEnv().getCatalogMgr()

@@ -381,6 +381,9 @@ public class PolicyMgr implements Writable {
             case STORAGE:
                 checkedPolicy = new StoragePolicy();
                 break;
+            case FULLTEXT:
+                checkedPolicy = new InvertIndexPolicy();
+                break;
             case ROW:
             default:
                 RowPolicy rowPolicy = new RowPolicy();

@@ -83,6 +83,7 @@ import org.apache.doris.load.routineload.AbstractDataSourceProperties;
 import org.apache.doris.load.routineload.kafka.KafkaDataSourceProperties;
 import org.apache.doris.load.sync.SyncJob;
 import org.apache.doris.load.sync.canal.CanalSyncJob;
+import org.apache.doris.policy.InvertIndexPolicy;
 import org.apache.doris.policy.Policy;
 import org.apache.doris.policy.RowPolicy;
 import org.apache.doris.policy.StoragePolicy;
@@ -197,7 +198,8 @@ public class GsonUtils {
     // runtime adapter for class "Policy"
     private static RuntimeTypeAdapterFactory<Policy> policyTypeAdapterFactory = RuntimeTypeAdapterFactory.of(
                     Policy.class, "clazz").registerSubtype(RowPolicy.class, RowPolicy.class.getSimpleName())
-            .registerSubtype(StoragePolicy.class, StoragePolicy.class.getSimpleName());
+            .registerSubtype(StoragePolicy.class, StoragePolicy.class.getSimpleName())
+            .registerSubtype(InvertIndexPolicy.class, InvertIndexPolicy.class.getSimpleName());
 
     private static RuntimeTypeAdapterFactory<CatalogIf> dsTypeAdapterFactory = RuntimeTypeAdapterFactory.of(
                     CatalogIf.class, "clazz")
@@ -509,7 +511,7 @@ public class GsonUtils {
 
         @Override
         public AtomicBoolean deserialize(JsonElement jsonElement, Type type,
-                                         JsonDeserializationContext jsonDeserializationContext)
+                JsonDeserializationContext jsonDeserializationContext)
                 throws JsonParseException {
             JsonObject jsonObject = jsonElement.getAsJsonObject();
             boolean value = jsonObject.get("boolean").getAsBoolean();
@@ -518,7 +520,7 @@ public class GsonUtils {
 
         @Override
         public JsonElement serialize(AtomicBoolean atomicBoolean, Type type,
-                                     JsonSerializationContext jsonSerializationContext) {
+                JsonSerializationContext jsonSerializationContext) {
             JsonObject jsonObject = new JsonObject();
             jsonObject.addProperty("boolean", atomicBoolean.get());
             return jsonObject;
@@ -528,7 +530,7 @@ public class GsonUtils {
     public static final class ImmutableMapDeserializer implements JsonDeserializer<ImmutableMap<?, ?>> {
         @Override
         public ImmutableMap<?, ?> deserialize(final JsonElement json, final Type type,
-                                              final JsonDeserializationContext context) throws JsonParseException {
+                final JsonDeserializationContext context) throws JsonParseException {
             final Type type2 = TypeUtils.parameterize(Map.class, ((ParameterizedType) type).getActualTypeArguments());
             final Map<?, ?> map = context.deserialize(json, type2);
             return ImmutableMap.copyOf(map);

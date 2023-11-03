@@ -81,7 +81,7 @@ std::string get_parser_phrase_support_string_from_properties(
     if (properties.find(INVERTED_INDEX_PARSER_PHRASE_SUPPORT_KEY) != properties.end()) {
         return properties.at(INVERTED_INDEX_PARSER_PHRASE_SUPPORT_KEY);
     } else {
-        return INVERTED_INDEX_PARSER_PHRASE_SUPPORT_NO;
+        return INVERTED_INDEX_PARSER_NO;
     }
 }
 
@@ -117,6 +117,22 @@ CharFilterMap get_parser_char_filter_map_from_properties(
     }
 
     return char_filter_map;
+}
+
+std::string get_parser_filter_stopwords_from_properties(
+        const std::map<std::string, std::string>& properties) {
+    if (properties.find(INVERTED_INDEX_PARSER_FILTER_STOPWORDS) != properties.end()) {
+        return properties.at(INVERTED_INDEX_PARSER_FILTER_STOPWORDS);
+    }
+    return INVERTED_INDEX_PARSER_NONE;
+}
+
+std::string get_parser_filter_lowercase_from_properties(
+        const std::map<std::string, std::string>& properties) {
+    if (properties.find(INVERTED_INDEX_PARSER_FILTER_LOWERCASE) != properties.end()) {
+        return properties.at(INVERTED_INDEX_PARSER_FILTER_LOWERCASE);
+    }
+    return INVERTED_INDEX_PARSER_NONE;
 }
 
 } // namespace doris

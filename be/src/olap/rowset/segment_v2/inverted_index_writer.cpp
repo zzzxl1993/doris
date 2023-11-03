@@ -29,6 +29,7 @@
 #include <ostream>
 #include <roaring/roaring.hh>
 #include <vector>
+#include "runtime/exec_env.h"
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -54,6 +55,7 @@
 #include "util/faststring.h"
 #include "util/slice.h"
 #include "util/string_util.h"
+#include "olap/rowset/segment_v2/inverted_index/custom_dict_mgr.h"
 
 #define FINALIZE_OUTPUT(x) \
     if (x != nullptr) {    \
@@ -146,18 +148,12 @@ public:
         bool exists = false;
         auto st = _fs->exists(index_path.c_str(), &exists);
         if (!st.ok()) {
-            LOG(ERROR) << "index_path:"
-                       << " exists error:" << st;
+            LOG(ERROR) << "index_path: " << index_path << ", exists error:" << st;
             return st;
         }
         if (exists) {
             LOG(ERROR) << "try to init a directory:" << index_path << " already exists";
             return Status::InternalError("init_fulltext_index a directory already exists");
-            //st = _fs->delete_directory(index_path.c_str());
-            //if (!st.ok()) {
-            //    LOG(ERROR) << "delete directory:" << index_path << " error:" << st;
-            //    return st;
-            //}
         }
 
         _char_string_reader = std::make_unique<lucene::util::SStringReader<char>>();
@@ -194,6 +190,24 @@ public:
             // ANALYSER_NOT_SET, ANALYSER_NONE use default SimpleAnalyzer
             _analyzer = std::make_unique<lucene::analysis::SimpleAnalyzer<char>>();
         }
+
+        std::string stopwords = get_parser_filter_stopwords_from_properties(_index_meta->properties());
+        if (stopwords != INVERTED_INDEX_PARSER_NONE) {
+            auto words_ptr = ExecEnv::GetInstance()->get_custom_dict_mgr()->getStopWords(stopwords);
+            if (words_ptr) {
+                _analyzer->setStopWords(words_ptr);
+            }
+        }
+
+        std::string lowercase = get_parser_filter_lowercase_from_properties(_index_meta->properties());
+        if (lowercase != INVERTED_INDEX_PARSER_NONE) {
+            if (lowercase == INVERTED_INDEX_PARSER_YES) {
+                _analyzer->setToLower(true);
+            } else {
+                _analyzer->setToLower(false);
+            }
+        }
+
         _index_writer = std::make_unique<lucene::index::IndexWriter>(_dir.get(), _analyzer.get(),
                                                                      create, true);
         _index_writer->setMaxBufferedDocs(MAX_BUFFER_DOCS);
@@ -212,7 +226,7 @@ public:
         }
         _field = new lucene::document::Field(_field_name.c_str(), field_config);
         if (get_parser_phrase_support_string_from_properties(_index_meta->properties()) ==
-            INVERTED_INDEX_PARSER_PHRASE_SUPPORT_YES) {
+            INVERTED_INDEX_PARSER_YES) {
             _field->setOmitTermFreqAndPositions(false);
         } else {
             _field->setOmitTermFreqAndPositions(true);

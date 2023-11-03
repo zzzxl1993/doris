@@ -102,6 +102,8 @@ public class CreatePolicyStmt extends DdlStmt {
                             + "Enable it by setting 'enable_storage_policy=true' in fe.conf");
                 }
                 break;
+            case FULLTEXT:
+                break;
             case ROW:
             default:
                 tableName.analyze(analyzer);
@@ -129,6 +131,7 @@ public class CreatePolicyStmt extends DdlStmt {
         sb.append(policyName);
         switch (type) {
             case STORAGE:
+            case FULLTEXT:
                 sb.append(" PROPERTIES(").append(new PrintableMap<>(properties, " = ", true, false)).append(")");
                 break;
             case ROW:

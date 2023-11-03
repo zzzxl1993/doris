@@ -1048,6 +1048,8 @@ DECLARE_mDouble(inverted_index_ram_buffer_size);
 DECLARE_Int32(query_bkd_inverted_index_limit_percent); // 5%
 // dict path for chinese analyzer
 DECLARE_String(inverted_index_dict_path);
+DECLARE_String(inverted_index_stopwords_path);
+DECLARE_String(inverted_index_userdict_path);
 DECLARE_Int32(inverted_index_read_buffer_size);
 // tree depth for bkd index
 DECLARE_Int32(max_depth_in_bkd_tree);

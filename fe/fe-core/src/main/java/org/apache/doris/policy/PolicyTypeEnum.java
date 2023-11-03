@@ -22,5 +22,5 @@ package org.apache.doris.policy;
  **/
 public enum PolicyTypeEnum {
 
-    ROW, STORAGE
+    ROW, STORAGE, FULLTEXT
 }
