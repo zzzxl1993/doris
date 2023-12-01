@@ -55,6 +55,22 @@ public:
                   int64_t bufferLength);
 
 private:
+    class FileInfo {
+    public:
+        std::string filename;
+        int32_t filesize;
+
+        bool operator<(const FileInfo& other) const {
+            if (filesize == other.filesize) {
+                return filename < other.filename;
+            }
+            return filesize < other.filesize;
+        }
+    };
+
+    void sort_files(std::vector<FileInfo>& file_infos);
+    
+
     CL_NS(store)::Directory* directory;
 };
 
@@ -143,6 +159,7 @@ class DorisCompoundDirectory::FSIndexInput : public lucene::store::BufferedIndex
         this->_pos = 0;
         this->_handle = handle;
         this->_io_ctx.reader_type = ReaderType::READER_QUERY;
+        this->_io_ctx.read_segment_index = false;
     }
 
 protected:
@@ -160,6 +177,8 @@ public:
     const char* getDirectoryType() const override { return DorisCompoundDirectory::getClassName(); }
     const char* getObjectName() const override { return getClassName(); }
     static const char* getClassName() { return "FSIndexInput"; }
+
+    void setIdxFileCache(bool index) override { _io_ctx.read_segment_index = index; }
 
     doris::Mutex _this_lock;
 

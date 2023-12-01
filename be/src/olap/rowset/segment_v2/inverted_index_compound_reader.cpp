@@ -71,7 +71,7 @@ private:
     CL_NS(store)::IndexInput* base;
     int64_t fileOffset;
     int64_t _length;
-
+    
 protected:
     void readInternal(uint8_t* /*b*/, const int32_t /*len*/) override;
     void seekInternal(const int64_t /*pos*/) override {}
@@ -140,6 +140,7 @@ DorisCompoundReader::DorisCompoundReader(lucene::store::Directory* d, const char
                               .c_str());
         }
         stream = dir->openInput(name, readBufferSize);
+        stream->setIdxFileCache(true);
 
         int32_t count = stream->readVInt();
         ReaderFileEntry* entry = nullptr;
@@ -158,7 +159,7 @@ DorisCompoundReader::DorisCompoundReader(lucene::store::Directory* d, const char
                 copyFile(entry->file_name.c_str(), entry->length, buffer, BUFFER_LENGTH);
             }
         }
-
+        
         success = true;
     }
     _CLFINALLY(if (!success && (stream != nullptr)) {
@@ -325,6 +326,10 @@ lucene::store::IndexOutput* DorisCompoundReader::createOutput(const char* /*name
 std::string DorisCompoundReader::toString() const {
     return std::string("DorisCompoundReader@") + this->directory + std::string("; file_name: ") +
            std::string(file_name);
+}
+
+CL_NS(store)::IndexInput* DorisCompoundReader::getDorisIndexInput() {
+    return stream;
 }
 
 } // namespace segment_v2

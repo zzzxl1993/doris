@@ -49,6 +49,7 @@ IndexSearcherPtr InvertedIndexSearcherCache::build_index_searcher(const io::File
     auto closeDirectory = true;
     auto reader = lucene::index::IndexReader::open(
             directory, config::inverted_index_read_buffer_size, closeDirectory);
+    directory->getDorisIndexInput()->setIdxFileCache(false);
     auto index_searcher = std::make_shared<lucene::search::IndexSearcher>(reader);
     // NOTE: need to cl_refcount-- here, so that directory will be deleted when
     // index_searcher is destroyed

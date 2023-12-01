@@ -93,6 +93,7 @@ public:
     std::string getFileName() { return file_name; }
     static const char* getClassName();
     const char* getObjectName() const override;
+    CL_NS(store)::IndexInput* getDorisIndexInput();
 };
 
 } // namespace segment_v2

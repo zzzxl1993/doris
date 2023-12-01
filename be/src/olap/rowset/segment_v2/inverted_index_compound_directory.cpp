@@ -97,6 +97,37 @@ CL_NS(store)::Directory* DorisCompoundFileWriter::getDirectory() {
     return directory;
 }
 
+void DorisCompoundFileWriter::sort_files(std::vector<FileInfo>& file_infos) {
+    auto cmp = [](const std::pair<int32_t, std::string>& lhs,
+                  const std::pair<int32_t, std::string>& rhs) { return lhs.first < rhs.first; };
+    std::map<std::pair<int32_t, std::string>, std::set<FileInfo>, decltype(cmp)> file_maps(cmp);
+    file_maps[{0, "segments"}];
+    file_maps[{1, "fnm"}];
+    file_maps[{2, "tii"}];
+    file_maps[{3, "tis"}];
+    file_maps[{INT_MAX, "all"}];
+
+    for (size_t i = 0; i < file_infos.size(); i++) {
+        const auto& file_info = file_infos[i];
+        auto it =
+                std::find_if(file_maps.begin(), file_maps.end(), [&file_info](const auto& element) {
+                    return file_info.filename.find(element.first.second) != std::string::npos;
+                });
+        if (it != file_maps.end()) {
+            it->second.insert(file_info);
+        } else {
+            file_maps[{INT_MAX, "all"}].insert(file_info);
+        }
+    }
+
+    file_infos.clear();
+    for (const auto& map : file_maps) {
+        for (const auto& file : map.second) {
+            file_infos.emplace_back(file);
+        }
+    }
+}
+
 void DorisCompoundFileWriter::writeCompoundFile() {
     // list files in current dir
     std::vector<std::string> files;
@@ -106,15 +137,15 @@ void DorisCompoundFileWriter::writeCompoundFile() {
     if (it != files.end()) {
         files.erase(it);
     }
-    // sort file list by file length
-    std::vector<std::pair<std::string, int64_t>> sorted_files;
+
+    std::vector<FileInfo> sorted_files;
     for (auto file : files) {
-        sorted_files.push_back(std::make_pair(
-                file, ((DorisCompoundDirectory*)directory)->fileLength(file.c_str())));
+        FileInfo file_info;
+        file_info.filename = file;
+        file_info.filesize = ((DorisCompoundDirectory*)directory)->fileLength(file.c_str());
+        sorted_files.emplace_back(std::move(file_info));
     }
-    std::sort(sorted_files.begin(), sorted_files.end(),
-              [](const std::pair<std::string, int64_t>& a,
-                 const std::pair<std::string, int64_t>& b) { return (a.second < b.second); });
+    sort_files(sorted_files);
 
     int32_t file_count = sorted_files.size();
 
@@ -138,12 +169,12 @@ void DorisCompoundFileWriter::writeCompoundFile() {
     const int64_t buffer_length = 16384;
     uint8_t ram_buffer[buffer_length];
     for (auto file : sorted_files) {
-        ram_output->writeString(file.first); // file name
+        ram_output->writeString(file.filename); // file name
         ram_output->writeLong(0);            // data offset
-        ram_output->writeLong(file.second);  // file length
-        header_file_length += file.second;
+        ram_output->writeLong(file.filesize);  // file length
+        header_file_length += file.filesize;
         if (header_file_length <= MAX_HEADER_DATA_SIZE) {
-            copyFile(file.first.c_str(), ram_output.get(), ram_buffer, buffer_length);
+            copyFile(file.filename.c_str(), ram_output.get(), ram_buffer, buffer_length);
             header_file_count++;
         }
     }
@@ -167,7 +198,7 @@ void DorisCompoundFileWriter::writeCompoundFile() {
     uint8_t header_buffer[buffer_length];
     for (int i = 0; i < sorted_files.size(); ++i) {
         auto file = sorted_files[i];
-        output->writeString(file.first); // FileName
+        output->writeString(file.filename); // FileName
         // DataOffset
         if (i < header_file_count) {
             // file data write in header, so we set its offset to -1.
@@ -175,19 +206,19 @@ void DorisCompoundFileWriter::writeCompoundFile() {
         } else {
             output->writeLong(data_offset);
         }
-        output->writeLong(file.second); // FileLength
+        output->writeLong(file.filesize); // FileLength
         if (i < header_file_count) {
             // append data
-            copyFile(file.first.c_str(), output.get(), header_buffer, buffer_length);
+            copyFile(file.filename.c_str(), output.get(), header_buffer, buffer_length);
         } else {
-            data_offset += file.second;
+            data_offset += file.filesize;
         }
     }
     // write rest files' data
     uint8_t data_buffer[buffer_length];
     for (int i = header_file_count; i < sorted_files.size(); ++i) {
         auto file = sorted_files[i];
-        copyFile(file.first.c_str(), output.get(), data_buffer, buffer_length);
+        copyFile(file.filename.c_str(), output.get(), data_buffer, buffer_length);
     }
     out_dir->close();
     // NOTE: need to decrease ref count, but not to delete here,
