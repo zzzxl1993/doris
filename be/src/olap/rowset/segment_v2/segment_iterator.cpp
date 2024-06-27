@@ -387,6 +387,39 @@ Status SegmentIterator::_init_impl(const StorageReadOptions& opts) {
         }
     }
 
+    {
+        for (auto& root_expr : _remaining_conjunct_roots) {
+            if (root_expr == nullptr) {
+                continue;
+            }
+
+            std::stack<std::pair<vectorized::VExprSPtr, bool>> stack;
+            stack.emplace(root_expr, false);
+
+            while (!stack.empty()) {
+                auto [expr, has_compound_pred] = stack.top();
+                stack.pop();
+
+                bool current_has_compound_pred =
+                        has_compound_pred || (expr->node_type() == TExprNodeType::COMPOUND_PRED);
+
+                if (expr->node_type() == TExprNodeType::FUNCTION_CALL &&
+                    expr->fn().name.function_name == "multi_match") {
+                    if (current_has_compound_pred) {
+                        no_compound_func_expr.emplace_back(expr);
+                    } else {
+                        compound_func_expr.emplace_back(expr);
+                    }
+                }
+
+                const auto& children = expr->children();
+                for (int32_t i = children.size() - 1; i >= 0; --i) {
+                    stack.emplace(children[i], current_has_compound_pred);
+                }
+            }
+        }
+    }
+
     return Status::OK();
 }
 
@@ -552,6 +585,7 @@ Status SegmentIterator::_get_row_ranges_by_column_conditions() {
                     ++it;
                 }
             }
+            _col_preds_except_leafnode_of_andnode.clear();
         }
         _opts.stats->rows_inverted_index_filtered += (input_rows - _row_bitmap.cardinality());
     }
@@ -1237,18 +1271,6 @@ Status SegmentIterator::_apply_inverted_index() {
     std::vector<ColumnPredicate*> remaining_predicates;
     std::set<const ColumnPredicate*> no_need_to_pass_column_predicate_set;
 
-    // TODO:Comment out this code before introducing range query functionality
-    /*for (const auto& entry : _opts.col_id_to_predicates) {
-        ColumnId column_id = entry.first;
-        auto pred = entry.second;
-        bool continue_apply = true;
-        RETURN_IF_ERROR(_apply_inverted_index_on_block_column_predicate(
-                column_id, pred.get(), no_need_to_pass_column_predicate_set, &continue_apply));
-        if (!continue_apply) {
-            break;
-        }
-    }*/
-
     for (auto pred : _col_predicates) {
         if (no_need_to_pass_column_predicate_set.count(pred) > 0) {
             continue;
@@ -1278,6 +1300,21 @@ Status SegmentIterator::_apply_inverted_index() {
                 it = _common_expr_ctxs_push_down.erase(it);
                 VLOG_DEBUG << "delete expr from _remaining_conjunct_roots "
                            << (*it)->root()->debug_string();
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    for (auto& expr : compound_func_expr) {
+        auto result = std::make_shared<roaring::Roaring>();
+        RETURN_IF_ERROR(expr->eval_inverted_index(this, result));
+        _row_bitmap &= *result;
+        for (auto it = _remaining_conjunct_roots.begin(); it != _remaining_conjunct_roots.end();) {
+            if (*it == expr) {
+                std::erase_if(_common_expr_ctxs_push_down,
+                              [&it](const auto& iter) { return iter->root() == *it; });
+                it = _remaining_conjunct_roots.erase(it);
             } else {
                 ++it;
             }
@@ -1348,7 +1385,7 @@ Status SegmentIterator::_init_inverted_index_iterators() {
     if (_cur_rowid >= num_rows()) {
         return Status::OK();
     }
-    for (auto cid : _schema->column_ids()) {
+    for (size_t cid = 0; cid < _inverted_index_iterators.size(); cid++) {
         if (_inverted_index_iterators[cid] == nullptr) {
             // Use segment’s own index_meta, for compatibility with future indexing needs to default to lowercase.
             RETURN_IF_ERROR(_segment->new_inverted_index_iterator(
@@ -1857,7 +1894,8 @@ Status SegmentIterator::_read_columns(const std::vector<ColumnId>& column_ids,
 }
 
 Status SegmentIterator::_init_current_block(
-        vectorized::Block* block, std::vector<vectorized::MutableColumnPtr>& current_columns) {
+        vectorized::Block* block, std::vector<vectorized::MutableColumnPtr>& current_columns,
+        uint32_t nrows_read_limit) {
     block->clear_column_data(_schema->num_column_ids());
 
     for (size_t i = 0; i < _schema->num_column_ids(); i++) {
@@ -1877,7 +1915,7 @@ Status SegmentIterator::_init_current_block(
                     column_desc->path() == nullptr ? "" : column_desc->path()->get_path());
             // TODO reuse
             current_columns[cid] = file_column_type->create_column();
-            current_columns[cid]->reserve(_opts.block_row_max);
+            current_columns[cid]->reserve(nrows_read_limit);
         } else {
             // the column in block must clear() here to insert new data
             if (_is_pred_column[cid] ||
@@ -1896,7 +1934,7 @@ Status SegmentIterator::_init_current_block(
                 } else if (column_desc->type() == FieldType::OLAP_FIELD_TYPE_DATETIME) {
                     current_columns[cid]->set_datetime_type();
                 }
-                current_columns[cid]->reserve(_opts.block_row_max);
+                current_columns[cid]->reserve(nrows_read_limit);
             }
         }
     }
@@ -1952,7 +1990,6 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
         if (_prune_column(cid, column, true, nrows_read)) {
             continue;
         }
-
         DBUG_EXECUTE_IF("segment_iterator._read_columns_by_index", {
             return Status::Error<ErrorCode::INTERNAL_ERROR>("{} does not need to read data");
         })
@@ -2148,7 +2185,11 @@ Status SegmentIterator::_read_columns_by_rowids(std::vector<ColumnId>& read_colu
     }
 
     for (auto cid : read_column_ids) {
-        if (_prune_column(cid, (*mutable_columns)[cid], true, select_size)) {
+        auto& colunm = (*mutable_columns)[cid];
+        if (_no_need_read_key_data(cid, colunm, select_size)) {
+            continue;
+        }
+        if (_prune_column(cid, colunm, true, select_size)) {
             continue;
         }
         RETURN_IF_ERROR(_column_iterators[cid]->read_by_rowids(rowids.data(), select_size,
@@ -2302,14 +2343,16 @@ Status SegmentIterator::_next_batch_internal(vectorized::Block* block) {
             }
         }
     }
-    RETURN_IF_ERROR(_init_current_block(block, _current_return_columns));
-    _converted_column_ids.assign(_schema->columns().size(), 0);
 
-    _current_batch_rows_read = 0;
     uint32_t nrows_read_limit = _opts.block_row_max;
     if (_can_opt_topn_reads()) {
         nrows_read_limit = std::min(static_cast<uint32_t>(_opts.topn_limit), nrows_read_limit);
     }
+
+    RETURN_IF_ERROR(_init_current_block(block, _current_return_columns, nrows_read_limit));
+    _converted_column_ids.assign(_schema->columns().size(), 0);
+
+    _current_batch_rows_read = 0;
     RETURN_IF_ERROR(_read_columns_by_index(
             nrows_read_limit, _current_batch_rows_read,
             _lazy_materialization_read || _opts.record_rowids || _is_need_expr_eval));
@@ -2708,7 +2751,7 @@ void SegmentIterator::_calculate_pred_in_remaining_conjunct_root(
 
     auto node_type = expr->node_type();
     if (node_type == TExprNodeType::SLOT_REF) {
-        auto slot_expr = std::dynamic_pointer_cast<doris::vectorized::VSlotRef>(expr);
+        auto* slot_expr = static_cast<const doris::vectorized::VSlotRef*>(expr.get());
         if (_column_predicate_info->column_name.empty()) {
             _column_predicate_info->column_name = expr->expr_name();
             _column_predicate_info->column_id = slot_expr->column_id();
@@ -2722,7 +2765,7 @@ void SegmentIterator::_calculate_pred_in_remaining_conjunct_root(
                     *new_column_pred_info);
         }
     } else if (_is_literal_node(node_type)) {
-        auto v_literal_expr = static_cast<const doris::vectorized::VLiteral*>(expr.get());
+        auto* v_literal_expr = static_cast<const doris::vectorized::VLiteral*>(expr.get());
         _column_predicate_info->query_values.insert(v_literal_expr->value());
     } else {
         if (node_type == TExprNodeType::MATCH_PRED) {
@@ -2747,7 +2790,10 @@ void SegmentIterator::_calculate_pred_in_remaining_conjunct_root(
 
 bool SegmentIterator::_no_need_read_key_data(ColumnId cid, vectorized::MutableColumnPtr& column,
                                              size_t nrows_read) {
-    if (_opts.tablet_schema->keys_type() != KeysType::DUP_KEYS) {
+    // only support DUP_KEYS and UNIQUE_KEYS with MOW
+    if (!((_opts.tablet_schema->keys_type() == KeysType::DUP_KEYS ||
+           (_opts.tablet_schema->keys_type() == KeysType::UNIQUE_KEYS &&
+            _opts.enable_unique_key_merge_on_write)))) {
         return false;
     }
 
@@ -2805,11 +2851,20 @@ bool SegmentIterator::_can_opt_topn_reads() const {
         return false;
     }
 
-    if (!_col_predicates.empty() || !_col_preds_except_leafnode_of_andnode.empty()) {
-        return false;
+    std::set<uint32_t> cids;
+    for (auto* pred : _col_predicates) {
+        cids.insert(pred->column_id());
+    }
+    for (auto* pred : _col_preds_except_leafnode_of_andnode) {
+        cids.insert(pred->column_id());
     }
 
-    return true;
+    uint32_t delete_sign_idx = _opts.tablet_schema->delete_sign_idx();
+    bool result = std::ranges::all_of(cids.begin(), cids.end(), [delete_sign_idx](auto cid) {
+        return cid == delete_sign_idx;
+    });
+
+    return result;
 }
 
 } // namespace segment_v2

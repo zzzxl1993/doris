@@ -60,6 +60,7 @@ class MatchPredicate;
 namespace vectorized {
 class VExpr;
 class VExprContext;
+class FunctionMultiMatch;
 } // namespace vectorized
 struct RowLocation;
 
@@ -222,7 +223,8 @@ private:
                                                 bool set_block_rowid);
     void _replace_version_col(size_t num_rows);
     Status _init_current_block(vectorized::Block* block,
-                               std::vector<vectorized::MutableColumnPtr>& non_pred_vector);
+                               std::vector<vectorized::MutableColumnPtr>& non_pred_vector,
+                               uint32_t nrows_read_limit);
     uint16_t _evaluate_vectorization_predicate(uint16_t* sel_rowid_idx, uint16_t selected_size);
     uint16_t _evaluate_short_circuit_predicate(uint16_t* sel_rowid_idx, uint16_t selected_size);
     void _output_non_pred_columns(vectorized::Block* block);
@@ -492,6 +494,11 @@ private:
     std::set<int32_t> _output_columns;
 
     std::unique_ptr<HierarchicalDataReader> _path_reader;
+
+    std::vector<vectorized::VExprSPtr> compound_func_expr;
+    std::vector<vectorized::VExprSPtr> no_compound_func_expr;
+
+    friend class vectorized::FunctionMultiMatch;
 };
 
 } // namespace segment_v2

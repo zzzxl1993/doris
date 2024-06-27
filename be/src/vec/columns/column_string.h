@@ -35,6 +35,7 @@
 #include "gutil/integral_types.h"
 #include "runtime/define_primitive_type.h"
 #include "util/hash_util.hpp"
+#include "util/memcpy_inlined.h"
 #include "vec/columns/column.h"
 #include "vec/common/assert_cast.h"
 #include "vec/common/cow.h"
@@ -373,7 +374,7 @@ public:
         for (size_t i = start_index; i < start_index + num; i++) {
             int32_t codeword = data_array[i];
             auto& src = dict[codeword];
-            memcpy(chars.data() + old_size, src.data, src.size);
+            memcpy_inlined(chars.data() + old_size, src.data, src.size);
             old_size += src.size;
         }
     }

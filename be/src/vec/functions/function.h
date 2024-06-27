@@ -40,6 +40,10 @@
 #include "vec/data_types/data_type.h"
 #include "vec/data_types/data_type_nullable.h"
 
+namespace doris::segment_v2 {
+class SegmentIterator;
+} // namespace doris::segment_v2
+
 namespace doris::vectorized {
 
 #define RETURN_REAL_TYPE_FOR_DATEV2_FUNCTION(TYPE)                                       \
@@ -54,6 +58,7 @@ namespace doris::vectorized {
                                      : std::make_shared<TYPE>();
 
 class Field;
+class VExpr;
 
 // Only use dispose the variadic argument
 template <typename T>
@@ -177,6 +182,13 @@ public:
                            size_t result, size_t input_rows_count, bool dry_run = false) const {
         return prepare(context, block, arguments, result)
                 ->execute(context, block, arguments, result, input_rows_count, dry_run);
+    }
+
+    virtual Status eval_inverted_index(const VExpr* expr,
+                                       segment_v2::SegmentIterator* segment_iterator,
+                                       std::shared_ptr<roaring::Roaring>& bitmap) {
+        return Status::NotSupported("eval_inverted_index is not supported in function: ",
+                                    get_name());
     }
 
     /// Do cleaning work when function is finished, i.e., release state variables in the
@@ -499,6 +511,11 @@ public:
 
     bool is_use_default_implementation_for_constants() const override {
         return function->is_use_default_implementation_for_constants();
+    }
+
+    Status eval_inverted_index(const VExpr* expr, segment_v2::SegmentIterator* segment_iterator,
+                               std::shared_ptr<roaring::Roaring>& bitmap) override {
+        return function->eval_inverted_index(expr, segment_iterator, bitmap);
     }
 
 private:

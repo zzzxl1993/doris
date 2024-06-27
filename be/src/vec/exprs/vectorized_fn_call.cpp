@@ -137,6 +137,11 @@ void VectorizedFnCall::close(VExprContext* context, FunctionContext::FunctionSta
     VExpr::close(context, scope);
 }
 
+Status VectorizedFnCall::eval_inverted_index(segment_v2::SegmentIterator* segment_iterator,
+                                             std::shared_ptr<roaring::Roaring>& bitmap) {
+    return _function->eval_inverted_index(this, segment_iterator, bitmap);
+}
+
 Status VectorizedFnCall::_do_execute(doris::vectorized::VExprContext* context,
                                      doris::vectorized::Block* block, int* result_column_id,
                                      std::vector<size_t>& args) {

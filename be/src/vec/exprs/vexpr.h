@@ -115,6 +115,11 @@ public:
 
     virtual Status execute(VExprContext* context, Block* block, int* result_column_id) = 0;
 
+    virtual Status eval_inverted_index(segment_v2::SegmentIterator* segment_iterator,
+                                       std::shared_ptr<roaring::Roaring>& bitmap) {
+        return Status::NotSupported("Not supported execute_with_inverted_index");
+    }
+
     // Only the 4th parameter is used in the runtime filter. In and MinMax need overwrite the
     // interface
     virtual Status execute_runtime_fitler(VExprContext* context, Block* block,

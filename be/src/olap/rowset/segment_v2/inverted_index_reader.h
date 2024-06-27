@@ -308,7 +308,7 @@ public:
     [[nodiscard]] const std::map<string, string>& get_index_properties() const;
     [[nodiscard]] bool has_null() { return _reader->has_null(); };
 
-private:
+public:
     OlapReaderStatistics* _stats = nullptr;
     RuntimeState* _runtime_state = nullptr;
     std::shared_ptr<InvertedIndexReader> _reader;

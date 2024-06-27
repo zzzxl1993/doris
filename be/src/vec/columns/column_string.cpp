@@ -148,7 +148,7 @@ void ColumnStr<T>::insert_range_from(const IColumn& src, size_t start, size_t le
     size_t old_chars_size = chars.size();
     check_chars_length(old_chars_size + nested_length, offsets.size() + length);
     chars.resize(old_chars_size + nested_length);
-    memcpy(&chars[old_chars_size], &src_concrete.chars[nested_offset], nested_length);
+    memcpy_inlined(&chars[old_chars_size], &src_concrete.chars[nested_offset], nested_length);
 
     if (start == 0 && offsets.empty()) {
         offsets.assign(src_concrete.offsets.begin(), src_concrete.offsets.begin() + length);
