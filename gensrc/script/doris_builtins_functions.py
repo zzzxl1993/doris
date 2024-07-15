@@ -2200,11 +2200,6 @@ visible_functions = {
         [['ignore'], 'BOOLEAN', ['ARRAY_VARCHAR', '...'], 'ALWAYS_NOT_NULLABLE'],
         [['ignore'], 'BOOLEAN', ['ARRAY_STRING', '...'], 'ALWAYS_NOT_NULLABLE']
     ],
-
-    # multi match functions
-    "MultiMatch": [
-        [['multi_match'], 'BOOLEAN', ['STRING', 'STRING', 'STRING', 'STRING'], 'ALWAYS_NOT_NULLABLE']
-    ]
 }
 
 # Except the following functions, other function will directly return
