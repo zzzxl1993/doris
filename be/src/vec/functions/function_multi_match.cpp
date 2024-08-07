@@ -97,7 +97,8 @@ Status FunctionMultiMatch::open(FunctionContext* context,
 }
 
 Status FunctionMultiMatch::eval_inverted_index(FunctionContext* context,
-                                               segment_v2::FuncExprParams& params) {
+                                               segment_v2::FuncExprParams& params,
+                                               std::shared_ptr<roaring::Roaring>& result) {
     auto* match_param = reinterpret_cast<MatchParam*>(
             context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
     if (match_param == nullptr) {
@@ -151,7 +152,7 @@ Status FunctionMultiMatch::eval_inverted_index(FunctionContext* context,
     auto* cache = InvertedIndexQueryCache::instance();
     InvertedIndexQueryCacheHandle cache_handler;
     if (cache->lookup(cache_key, &cache_handler)) {
-        params.result = cache_handler.get_bitmap();
+        result = cache_handler.get_bitmap();
         return Status::OK();
     }
 
@@ -164,15 +165,15 @@ Status FunctionMultiMatch::eval_inverted_index(FunctionContext* context,
         }
         const auto& index_reader = index_iterator->reader();
 
-        auto result = std::make_shared<roaring::Roaring>();
+        auto single_result = std::make_shared<roaring::Roaring>();
         StringRef query_value(match_param->query.data());
         RETURN_IF_ERROR(index_reader->query(opts.stats, opts.runtime_state, column_name,
-                                            &query_value, query_type, result));
-        (*params.result) |= (*result);
+                                            &query_value, query_type, single_result));
+        (*result) |= (*single_result);
     }
 
-    params.result->runOptimize();
-    cache->insert(cache_key, params.result, &cache_handler);
+    result->runOptimize();
+    cache->insert(cache_key, result, &cache_handler);
 
     return Status::OK();
 }

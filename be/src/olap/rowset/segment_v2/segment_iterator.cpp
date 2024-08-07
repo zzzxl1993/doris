@@ -2976,9 +2976,8 @@ Status SegmentIterator::execute_func_expr(const vectorized::VExprSPtr& expr,
     params._unique_id = _schema->unique_id(slot_expr->column_id());
     params._column_name = _opts.tablet_schema->column(params._column_id).name();
     params._segment_iterator = this;
-    params.result = result;
 
-    return expr->eval_inverted_index(expr_ctx.get(), params);
+    return expr->eval_inverted_index(expr_ctx.get(), params, result);
 }
 
 } // namespace segment_v2
