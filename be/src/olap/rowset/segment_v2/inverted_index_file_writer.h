@@ -120,7 +120,7 @@ private:
                                           int64_t header_length, int32_t header_file_count);
     // Helper functions specific to write_v2
     std::pair<lucene::store::Directory*, std::unique_ptr<lucene::store::IndexOutput>>
-    create_output_stream_v2();
+    create_output_stream();
     void write_version_and_indices_count(lucene::store::IndexOutput* output);
     struct FileMetadata {
         int64_t index_id;

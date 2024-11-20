@@ -310,7 +310,7 @@ Status InvertedIndexFileWriter::write() {
         auto file_metadata = prepare_file_metadata(current_offset);
 
         // Create output stream
-        auto result = create_output_stream_v2();
+        auto result = create_output_stream();
         out_dir = result.first;
         compound_file_output = std::move(result.second);
 
@@ -484,7 +484,7 @@ void InvertedIndexFileWriter::write_header_and_data_v1(lucene::store::IndexOutpu
 }
 
 std::pair<lucene::store::Directory*, std::unique_ptr<lucene::store::IndexOutput>>
-InvertedIndexFileWriter::create_output_stream_v2() {
+InvertedIndexFileWriter::create_output_stream() {
     io::Path index_path {InvertedIndexDescriptor::get_index_file_path_v2(_index_path_prefix)};
     auto* out_dir = DorisFSDirectoryFactory::getDirectory(_fs, index_path.parent_path().c_str());
     out_dir->set_file_writer_opts(_opts);
