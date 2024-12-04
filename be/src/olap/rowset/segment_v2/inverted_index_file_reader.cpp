@@ -79,7 +79,7 @@ Status InvertedIndexFileReader::_init_from_v2(int32_t read_buffer_size) {
 
         // 3. read file
         int32_t version = _stream->readInt(); // Read version number
-        if (version == InvertedIndexStorageFormatPB::V2) {
+        if (version >= InvertedIndexStorageFormatPB::V2) {
             DCHECK(version == _storage_format);
             int32_t numIndices = _stream->readInt(); // Read number of indices
             ReaderFileEntry* entry = nullptr;

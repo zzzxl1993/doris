@@ -70,7 +70,7 @@ public:
     Status delete_index(const TabletIndex* index_meta);
     Status initialize(InvertedIndexDirectoryMap& indices_dirs);
     virtual ~InvertedIndexFileWriter() = default;
-    Status write_v2();
+    Status write();
     Status write_v1();
     Status close();
     const InvertedIndexFileInfo* get_index_file_info() const {
@@ -139,11 +139,11 @@ private:
                   length(len),
                   directory(dir) {}
     };
-    std::vector<FileMetadata> prepare_file_metadata_v2(int64_t& current_offset);
+    std::vector<FileMetadata> prepare_file_metadata(int64_t& current_offset);
     virtual void write_index_headers_and_metadata(lucene::store::IndexOutput* output,
                                                   const std::vector<FileMetadata>& file_metadata);
-    void copy_files_data_v2(lucene::store::IndexOutput* output,
-                            const std::vector<FileMetadata>& file_metadata);
+    void copy_files_data(lucene::store::IndexOutput* output,
+                         const std::vector<FileMetadata>& file_metadata);
     Status _insert_directory_into_map(int64_t index_id, const std::string& index_suffix,
                                       std::shared_ptr<DorisFSDirectory> dir);
     // Member variables...
