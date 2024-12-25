@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.thrift.TInvertedIndexFileStorageFormat;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
@@ -213,7 +214,8 @@ public class IndexDef {
     }
 
     public void checkColumn(Column column, KeysType keysType, boolean enableUniqueKeyMergeOnWrite,
-                boolean disableInvertedIndexV1ForVariant) throws AnalysisException {
+            TInvertedIndexFileStorageFormat invertedIndexFileStorageFormat,
+            boolean disableInvertedIndexV1ForVariant) throws AnalysisException {
         if (indexType == IndexType.BITMAP || indexType == IndexType.INVERTED || indexType == IndexType.BLOOMFILTER
                 || indexType == IndexType.NGRAM_BF) {
             String indexColName = column.getName();
@@ -246,7 +248,8 @@ public class IndexDef {
             }
 
             if (indexType == IndexType.INVERTED) {
-                InvertedIndexUtil.checkInvertedIndexParser(indexColName, colType, properties);
+                InvertedIndexUtil.checkInvertedIndexParser(indexColName, colType, properties,
+                        invertedIndexFileStorageFormat);
             } else if (indexType == IndexType.NGRAM_BF) {
                 if (colType != PrimitiveType.CHAR && colType != PrimitiveType.VARCHAR
                         && colType != PrimitiveType.STRING) {
