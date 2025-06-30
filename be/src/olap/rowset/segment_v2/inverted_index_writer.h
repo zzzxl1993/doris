@@ -131,6 +131,7 @@ private:
     bool _single_field = true;
     std::shared_ptr<DorisFSDirectory> _dir = nullptr;
     std::unique_ptr<lucene::index::IndexWriter> _index_writer = nullptr;
+    std::unique_ptr<lucene::search::Similarity> _similarity = nullptr;
     std::unique_ptr<lucene::analysis::Analyzer> _analyzer = nullptr;
     std::unique_ptr<lucene::util::Reader> _char_string_reader = nullptr;
     std::shared_ptr<lucene::util::bkd::bkd_writer> _bkd_writer = nullptr;

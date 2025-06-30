@@ -183,21 +183,23 @@ InvertedIndexColumnWriter<field_type>::create_index_writer() {
     index_writer->setMergeFactor(MERGE_FACTOR);
     index_writer->setUseCompoundFile(false);
     index_writer->setEnableCorrectTermWrite(config::enable_inverted_index_correct_term_write);
+    index_writer->setSimilarity(_similarity.get());
 
     return index_writer;
 }
 
 template <FieldType field_type>
 Status InvertedIndexColumnWriter<field_type>::create_field(lucene::document::Field** field) {
-    int field_config =
-            int(lucene::document::Field::STORE_NO) | int(lucene::document::Field::INDEX_NONORMS);
+    int32_t field_config = int32_t(lucene::document::Field::STORE_NO) |
+                           int32_t(lucene::document::Field::INDEX_NONORMS);
     field_config |= (_parser_type == InvertedIndexParserType::PARSER_NONE)
-                            ? int(lucene::document::Field::INDEX_UNTOKENIZED)
-                            : int(lucene::document::Field::INDEX_TOKENIZED);
+                            ? int32_t(lucene::document::Field::INDEX_UNTOKENIZED)
+                            : int32_t(lucene::document::Field::INDEX_TOKENIZED);
     *field = new lucene::document::Field(_field_name.c_str(), field_config);
     (*field)->setOmitTermFreqAndPositions(
             !(get_parser_phrase_support_string_from_properties(_index_meta->properties()) ==
               INVERTED_INDEX_PARSER_PHRASE_SUPPORT_YES));
+    (*field)->setOmitNorms(false);
     DBUG_EXECUTE_IF("InvertedIndexColumnWriter::create_field_v3", {
         if (_index_file_writer->get_storage_format() != InvertedIndexStorageFormatPB::V3) {
             return Status::Error<doris::ErrorCode::INVERTED_INDEX_CLUCENE_ERROR>(
@@ -248,6 +250,7 @@ Status InvertedIndexColumnWriter<field_type>::init_fulltext_index() {
     _char_string_reader =
             DORIS_TRY(create_char_string_reader(_inverted_index_ctx->char_filter_map));
     _analyzer = DORIS_TRY(create_analyzer(_inverted_index_ctx));
+    _similarity = std::make_unique<lucene::search::LengthSimilarity>();
     _index_writer = create_index_writer();
     _doc = std::make_unique<lucene::document::Document>();
     if (_single_field) {

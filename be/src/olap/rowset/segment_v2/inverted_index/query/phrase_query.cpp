@@ -23,13 +23,15 @@
 
 #include "CLucene/index/Terms.h"
 #include "olap/rowset/segment_v2/inverted_index/analyzer/analyzer.h"
+#include "olap/rowset/segment_v2/inverted_index/query/query_helper.h"
 #include "olap/rowset/segment_v2/inverted_index/util/term_position_iterator.h"
 
 namespace doris::segment_v2 {
 
-PhraseQuery::PhraseQuery(const std::shared_ptr<lucene::search::IndexSearcher>& searcher,
-                         const TQueryOptions& query_options, const io::IOContext* io_ctx)
-        : _searcher(searcher), _io_ctx(io_ctx) {}
+PhraseQuery::PhraseQuery(SearcherPtr searcher, IndexQueryContextPtr context)
+        : _searcher(std::move(searcher)),
+          _context(std::move(context)),
+          _disjunction_query(searcher, context) {}
 
 void PhraseQuery::add(const InvertedIndexQueryInfo& query_info) {
     if (query_info.terms.empty()) {
@@ -37,10 +39,7 @@ void PhraseQuery::add(const InvertedIndexQueryInfo& query_info) {
     }
 
     if (query_info.terms.size() == 1) {
-        auto* term_pos = TermPositionIterator::ensure_term_position(
-                _io_ctx, _searcher->getReader(), query_info.field_name, query_info.terms[0]);
-        _iterators.emplace_back(std::make_shared<TermPositionIterator>(term_pos));
-        _lead1 = &_iterators.at(0);
+        _disjunction_query.add(query_info);
         return;
     }
 
@@ -63,6 +62,8 @@ void PhraseQuery::add(const InvertedIndexQueryInfo& query_info) {
     for (int32_t i = 2; i < _iterators.size(); i++) {
         _others.emplace_back(&_iterators[i]);
     }
+
+    init_similarities(query_info.field_name);
 }
 
 void PhraseQuery::add(const std::wstring& field_name,
@@ -84,15 +85,16 @@ void PhraseQuery::add(const std::wstring& field_name,
     for (int32_t i = 2; i < _iterators.size(); i++) {
         _others.push_back(&_iterators[i]);
     }
+
+    init_similarities(field_name);
 }
 
 void PhraseQuery::init_exact_phrase_matcher(const InvertedIndexQueryInfo& query_info) {
     std::vector<PostingsAndPosition> postings;
     for (size_t i = 0; i < query_info.terms.size(); i++) {
         const auto& term = query_info.terms[i];
-        auto* term_pos = TermPositionIterator::ensure_term_position(_io_ctx, _searcher->getReader(),
-                                                                    query_info.field_name, term);
-        auto iter = std::make_shared<TermPositionIterator>(term_pos);
+        auto iter = TermPositionsIterator::create(_context->io_ctx, _searcher->getReader(),
+                                                  query_info.field_name, term);
         _iterators.emplace_back(iter);
         postings.emplace_back(iter, i);
     }
@@ -106,19 +108,18 @@ void PhraseQuery::init_exact_phrase_matcher(const std::wstring& field_name,
     for (size_t i = 0; i < terms.size(); i++) {
         if (i < terms.size() - 1) {
             const auto& term = terms[i][0];
-            auto* term_pos = TermPositionIterator::ensure_term_position(
-                    _io_ctx, _searcher->getReader(), field_name, term);
-            auto iter = std::make_shared<TermPositionIterator>(term_pos);
+            auto iter = TermPositionsIterator::create(_context->io_ctx, _searcher->getReader(),
+                                                      field_name, term);
             _iterators.emplace_back(iter);
             postings.emplace_back(iter, i);
         } else {
-            std::vector<TermPositionIterator> subs;
+            std::vector<TermPositionsIterPtr> subs;
             for (const auto& term : terms[i]) {
-                auto* term_pos = TermPositionIterator::ensure_term_position(
-                        _io_ctx, _searcher->getReader(), field_name, term);
-                subs.emplace_back(term_pos);
+                auto iter = TermPositionsIterator::create(_context->io_ctx, _searcher->getReader(),
+                                                          field_name, term);
+                subs.emplace_back(iter);
             }
-            auto iter = std::make_shared<UnionTermIterator<TermPositionIterator>>(std::move(subs));
+            auto iter = std::make_shared<UnionTermIterator<TermPositionsIterator>>(std::move(subs));
             _iterators.emplace_back(iter);
             postings.emplace_back(iter, i);
         }
@@ -131,9 +132,8 @@ void PhraseQuery::init_sloppy_phrase_matcher(const InvertedIndexQueryInfo& query
     std::vector<PostingsAndFreq> postings;
     for (size_t i = 0; i < query_info.terms.size(); i++) {
         const auto& term = query_info.terms[i];
-        auto* term_pos = TermPositionIterator::ensure_term_position(_io_ctx, _searcher->getReader(),
-                                                                    query_info.field_name, term);
-        auto iter = std::make_shared<TermPositionIterator>(term_pos);
+        auto iter = TermPositionsIterator::create(_context->io_ctx, _searcher->getReader(),
+                                                  query_info.field_name, term);
         _iterators.emplace_back(iter);
         postings.emplace_back(iter, i, std::vector<std::string> {term});
     }
@@ -146,9 +146,8 @@ void PhraseQuery::init_ordered_sloppy_phrase_matcher(const InvertedIndexQueryInf
         std::vector<PostingsAndPosition> postings;
         for (size_t i = 0; i < query_info.terms.size(); i++) {
             const auto& term = query_info.terms[i];
-            auto* term_pos = TermPositionIterator::ensure_term_position(
-                    _io_ctx, _searcher->getReader(), query_info.field_name, term);
-            auto iter = std::make_shared<TermPositionIterator>(term_pos);
+            auto iter = TermPositionsIterator::create(_context->io_ctx, _searcher->getReader(),
+                                                      query_info.field_name, term);
             _iterators.emplace_back(iter);
             postings.emplace_back(iter, i);
         }
@@ -160,9 +159,8 @@ void PhraseQuery::init_ordered_sloppy_phrase_matcher(const InvertedIndexQueryInf
             std::vector<PostingsAndPosition> postings;
             for (size_t i = 0; i < terms.size(); i++) {
                 const auto& term = terms[i];
-                auto* term_pos = TermPositionIterator::ensure_term_position(
-                        _io_ctx, _searcher->getReader(), query_info.field_name, term);
-                auto iter = std::make_shared<TermPositionIterator>(term_pos);
+                auto iter = TermPositionsIterator::create(_context->io_ctx, _searcher->getReader(),
+                                                          query_info.field_name, term);
                 postings.emplace_back(iter, i);
             }
             ExactPhraseMatcher single_matcher(std::move(postings));
@@ -171,35 +169,69 @@ void PhraseQuery::init_ordered_sloppy_phrase_matcher(const InvertedIndexQueryInf
     }
 }
 
-void PhraseQuery::search(roaring::Roaring& roaring) {
-    if (_lead1 == nullptr) {
-        return;
-    }
-    if (_lead2 == nullptr) {
-        search_by_bitmap(roaring);
-        return;
-    }
-    search_by_skiplist(roaring);
-}
-
-void PhraseQuery::search_by_bitmap(roaring::Roaring& roaring) {
-    if (auto* term_iter = std::get_if<TermPosIterPtr>(_lead1)) {
-        DocRange doc_range;
-        while ((*term_iter)->read_range(&doc_range)) {
-            if (doc_range.type_ == DocRangeType::kMany) {
-                roaring.addMany(doc_range.doc_many_size_, doc_range.doc_many->data());
-            } else {
-                roaring.addRange(doc_range.doc_range.first, doc_range.doc_range.second);
+void PhraseQuery::init_similarities(const std::wstring& field_name) {
+    // TODO: Current implementation - computes BM25 scores separately for each term
+    // Note: This approach is suitable for TermQuery but does not conform to BM25 specification for PhraseQuery
+    // BM25 phrase query specification requires:
+    //   idf component = sum of idf values for all terms
+    //   tf component = phrase frequency (number of times entire phrase appears in document)
+    //   doc_length = total document length
+    //
+    // Future optimization direction:
+    //   1. Shift to unified phrase scoring: calculate sum of idf for all terms as combined idf
+    //   2. Use phrase frequency instead of individual term frequencies
+    //   3. Maintain document length normalization
+    //   4. Refactor to create a single Similarity object handling the entire phrase
+    if (_is_similarity && _context->collection_similarity) {
+        _similarities.resize(_iterators.size());
+        for (size_t i = 0; i < _iterators.size(); i++) {
+            const auto& iter = _iterators[i];
+            if (std::holds_alternative<TermPositionsIterPtr>(iter)) {
+                const auto& term_iter = std::get<TermPositionsIterPtr>(iter);
+                auto similarity = std::make_unique<BM25Similarity>();
+                similarity->for_one_term(_context, field_name, term_iter->term());
+                _similarities[i] = std::move(similarity);
             }
         }
     }
 }
 
+void PhraseQuery::pre_search(const InvertedIndexQueryInfo& query_info) {
+    if (query_info.terms.empty()) {
+        return;
+    }
+
+    QueryHelper::query_statistics(_context, _searcher, query_info.field_name, query_info.terms);
+}
+
+void PhraseQuery::search(roaring::Roaring& roaring) {
+    if (_lead1 == nullptr) {
+        _disjunction_query.search(roaring);
+        return;
+    }
+
+    search_by_skiplist(roaring);
+}
+
 void PhraseQuery::search_by_skiplist(roaring::Roaring& roaring) {
     int32_t doc = 0;
     while ((doc = do_next(visit_node(*_lead1, NextDoc {}))) != INT32_MAX) {
-        if (matches(doc)) {
-            roaring.add(doc);
+        if (!matches(doc)) {
+            continue;
+        }
+        roaring.add(doc);
+
+        if (_is_similarity && _context->collection_similarity) {
+            for (size_t i = 0; i < _iterators.size(); i++) {
+                const auto& iter = _iterators[i];
+                if (std::holds_alternative<TermPositionsIterPtr>(iter)) {
+                    const auto& term_iter = std::get<TermPositionsIterPtr>(iter);
+                    auto freq = term_iter->freq();
+                    auto doc_length = term_iter->norm();
+                    auto score = _similarities[i]->score(freq, doc_length);
+                    _context->collection_similarity->collect(doc, score);
+                }
+            }
         }
     }
 }

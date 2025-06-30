@@ -17,11 +17,18 @@
 
 #include "disjunction_query.h"
 
+#include "olap/rowset/segment_v2/inverted_index/query/query_helper.h"
+
 namespace doris::segment_v2 {
 
-DisjunctionQuery::DisjunctionQuery(const std::shared_ptr<lucene::search::IndexSearcher>& searcher,
-                                   const TQueryOptions& query_options, const io::IOContext* io_ctx)
-        : _searcher(searcher), _io_ctx(io_ctx) {}
+DisjunctionQuery::DisjunctionQuery(SearcherPtr searcher, IndexQueryContextPtr context)
+        : _searcher(std::move(searcher)), _context(std::move(context)) {}
+
+DisjunctionQuery::DisjunctionQuery(SearcherPtr searcher, IndexQueryContextPtr context,
+                                   bool is_similarity)
+        : DisjunctionQuery(std::move(searcher), std::move(context)) {
+    _is_similarity = is_similarity;
+}
 
 void DisjunctionQuery::add(const InvertedIndexQueryInfo& query_info) {
     if (query_info.terms.empty()) {
@@ -29,22 +36,49 @@ void DisjunctionQuery::add(const InvertedIndexQueryInfo& query_info) {
     }
 
     _field_name = query_info.field_name;
-    _terms = query_info.terms;
+
+    for (const auto& term : query_info.terms) {
+        auto iter = TermIterator::create(_context->io_ctx, _searcher->getReader(),
+                                         query_info.field_name, term);
+        _iterators.emplace_back(iter);
+    }
+
+    if (_is_similarity && _context->collection_similarity) {
+        for (const auto& iter : _iterators) {
+            auto similarity = std::make_unique<BM25Similarity>();
+            similarity->for_one_term(_context, _field_name, iter->term());
+            _similarities.emplace_back(std::move(similarity));
+        }
+    }
+}
+
+void DisjunctionQuery::pre_search(const InvertedIndexQueryInfo& query_info) {
+    if (query_info.terms.empty()) {
+        return;
+    }
+
+    QueryHelper::query_statistics(_context, _searcher, query_info.field_name, query_info.terms);
 }
 
 void DisjunctionQuery::search(roaring::Roaring& roaring) {
-    auto func = [this, &roaring](const std::string& term, bool first) {
-        auto* term_doc =
-                TermIterator::ensure_term_doc(_io_ctx, _searcher->getReader(), _field_name, term);
-        TermIterator iterator(term_doc);
-
+    auto func = [this, &roaring](size_t i, const TermIterPtr& iter, bool first) {
         DocRange doc_range;
         roaring::Roaring result;
-        while (iterator.read_range(&doc_range)) {
+        while (iter->read_range(&doc_range)) {
             if (doc_range.type_ == DocRangeType::kMany) {
                 result.addMany(doc_range.doc_many_size_, doc_range.doc_many->data());
+
+                if (_is_similarity && _context->collection_similarity) {
+                    QueryHelper::collect_many(_context, _similarities[i], doc_range, roaring,
+                                              first);
+                }
             } else {
                 result.addRange(doc_range.doc_range.first, doc_range.doc_range.second);
+
+                if (_is_similarity && _context->collection_similarity) {
+                    QueryHelper::collect_range(_context, _similarities[i], doc_range, roaring,
+                                               first);
+                }
             }
         }
 
@@ -54,8 +88,8 @@ void DisjunctionQuery::search(roaring::Roaring& roaring) {
             roaring |= result;
         }
     };
-    for (int i = 0; i < _terms.size(); i++) {
-        func(_terms[i], i == 0);
+    for (size_t i = 0; i < _iterators.size(); i++) {
+        func(i, _iterators[i], i == 0);
     }
 }
 

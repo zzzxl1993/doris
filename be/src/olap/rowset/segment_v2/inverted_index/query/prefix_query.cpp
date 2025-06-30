@@ -19,22 +19,21 @@
 
 namespace doris::segment_v2 {
 
-PrefixQuery::PrefixQuery(const std::shared_ptr<lucene::search::IndexSearcher>& searcher,
-                         const TQueryOptions& query_options, const io::IOContext* io_ctx)
-        : _searcher(searcher), _io_ctx(io_ctx) {}
+PrefixQuery::PrefixQuery(SearcherPtr searcher, IndexQueryContextPtr context)
+        : _searcher(std::move(searcher)), _context(std::move(context)) {}
 
 void PrefixQuery::add(const std::wstring& field_name, const std::vector<std::wstring>& terms) {
     if (terms.empty()) {
         _CLTHROWA(CL_ERR_IllegalArgument, "PhraseQuery::add: terms empty");
     }
 
-    std::vector<TermPositionIterator> subs;
+    std::vector<TermPositionsIterPtr> subs;
     for (const auto& ws_term : terms) {
-        auto* term_doc = TermPositionIterator::ensure_term_position(_io_ctx, _searcher->getReader(),
-                                                                    field_name, ws_term);
-        subs.emplace_back(term_doc);
+        auto iter = TermPositionsIterator::create(_context->io_ctx, _searcher->getReader(),
+                                                  field_name, ws_term);
+        subs.emplace_back(iter);
     }
-    _lead1 = std::make_shared<UnionTermIterator<TermPositionIterator>>(subs);
+    _lead1 = std::make_shared<UnionTermIterator<TermPositionsIterator>>(subs);
 }
 
 void PrefixQuery::search(roaring::Roaring& roaring) {
@@ -50,7 +49,7 @@ void PrefixQuery::get_prefix_terms(IndexReader* reader, const std::wstring& fiel
     std::wstring ws_prefix = StringUtil::string_to_wstring(prefix);
 
     Term* prefix_term = _CLNEW Term(field_name.c_str(), ws_prefix.c_str());
-    TermEnum* enumerator = reader->terms(prefix_term, _io_ctx);
+    TermEnum* enumerator = reader->terms(prefix_term, _context->io_ctx);
 
     int32_t count = 0;
     Term* lastTerm = nullptr;
